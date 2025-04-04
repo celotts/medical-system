@@ -1,0 +1,50 @@
+services:
+  db:
+    image: postgres:14.1
+    container_name: db-appointments
+    restart: always
+    volumes:
+      - appointment_postgres_data:/var/lib/postgresql/data
+      - ./sql/v1__create_tables.sql:/docker-entrypoint-initdb.d/v1__create_tables.sql
+    environment:
+      POSTGRES_USER: appointments
+      POSTGRES_PASSWORD: 0513Appointments
+      POSTGRES_DB: appointments
+    ports:
+      - "5438:5432"
+    networks:
+      - ms-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appointments-dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: ./patient
+      dockerfile: Dockerfile
+    container_name: patient-service
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: [ "/app/wait-for-it.sh", "db-appointments-dev:5438", "--", "java", "-jar", "/app/app.jar" ]
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db-appointments:5432/appointments
+      SPRING_DATASOURCE_USERNAME: appointments
+      SPRING_DATASOURCE_PASSWORD: 0513Appointments
+    ports:
+      - "8088:8080"
+    volumes:
+      - ./patient/wait-for-it.sh:/app/wait-for-it.sh
+    networks:
+      - ms-network
+    env_file:
+      - .env.dev
+volumes:
+  appointment_postgres_data:
+
+networks:
+  ms-network:
+    driver: bridge
