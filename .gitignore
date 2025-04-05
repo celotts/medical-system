@@ -5,3 +5,9 @@
 .env
 
 .env*
+.env.*
+
+echo "init-scripts/.env.*" >> .gitignore
+git add .gitignore
+git commit -m "✅ Add env files to .gitignore so Git chills out"
+git push origin feature/config_environment
