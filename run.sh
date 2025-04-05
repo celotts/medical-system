@@ -4,6 +4,12 @@
 ENVIRONMENT=${1:-dev}
 SERVICE=${2:-all}
 
+# ⛑ Verifica que Docker esté vivo
+if ! docker info > /dev/null 2>&1; then
+  echo "❌ Docker no está corriendo. Ve y enciéndelo como una persona funcional."
+  exit 1
+fi
+
 # 🪓 Verifica existencia de los archivos de entorno
 REQUIRED_ENVS=(.env.common .env.secrets .env.${ENVIRONMENT})
 for file in "${REQUIRED_ENVS[@]}"; do
@@ -18,6 +24,8 @@ GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+start_time=$(date +%s)
+
 echo -e "${CYAN}🧼 Bajando contenedores anteriores...${NC}"
 docker compose --env-file .env.common --env-file .env.secrets --env-file .env.${ENVIRONMENT} down --volumes --remove-orphans
 
@@ -30,7 +38,7 @@ if [ "$SERVICE" = "all" ]; then
   docker compose --env-file .env.common --env-file .env.secrets --env-file .env.${ENVIRONMENT} up --build
 else
   # Soporte para archivo de variables por servicio
-  SERVICE_ENV=.env.${SERVICE}
+  SERVICE_ENV=".env.${SERVICE}"
   if [ -f "$SERVICE_ENV" ]; then
     docker compose --env-file .env.common --env-file .env.secrets --env-file "$SERVICE_ENV" up --build "$SERVICE"
   else
@@ -38,3 +46,6 @@ else
     docker compose --env-file .env.common --env-file .env.secrets up --build "$SERVICE"
   fi
 fi
+
+end_time=$(date +%s)
+echo -e "${GREEN}🕒 Tiempo total: $((end_time - start_time)) segundos${NC}"
