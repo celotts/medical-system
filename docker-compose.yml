@@ -133,6 +133,7 @@ services:
       - "7071:8083"
     networks:
       - patient_ms-network
+
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
