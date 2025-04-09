@@ -1,32 +1,14 @@
+
+
 networks:
   patient_ms-network:
-    name: patient_ms-network
     driver: bridge
 
+volumes:
+  patient_postgres_data:
+    driver: local
+
 services:
-  config-service:
-    depends_on:
-      registry-service:
-        condition: service_healthy
-    container_name: patient-config-service
-    build:
-      context: ../config-service
-      dockerfile: Dockerfile
-    restart: on-failure
-    ports:
-      - "7778:7777"
-    networks:
-      - patient_ms-network
-    env_file:
-      - .env.common
-      - .env.secrets
-      - .env.config-service
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7777/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
 
   registry-service:
     build:
@@ -41,18 +23,36 @@ services:
     environment:
       SERVER_PORT: 8761
       SPRING_PROFILES_ACTIVE: dev
-      JAVA_TOOL_OPTIONS: "-Dio.micrometer.system-metrics.enabled=false -Dmanagement.metrics.enable.process=false -Dmanagement.metrics.enable.system=false"
-      SPRING_APPLICATION_JSON: '{
-        "management": {
-          "metrics": {"enable": {"system": false, "process": false, "jvm": true}},
-          "endpoints": {"web": {"exposure": {"include": "health,info"}}}
-        }
-      }'
+      JAVA_TOOL_OPTIONS: "-Dio.micrometer.system-metrics.enabled=false -Dmanagement.metrics.enable.process=false"
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8761/actuator/health || exit 1"]
       interval: 10s
       retries: 5
-      start_period: 30s
+      start_period: 60s
+
+  config-service:
+    build:
+      context: ../config-service
+      dockerfile: Dockerfile
+    container_name: config-service
+    restart: always
+    ports:
+      - "7777:7777"
+    networks:
+      - patient_ms-network
+    env_file:
+      - .env.common
+      - .env.secrets
+      - .env.config-service
+    depends_on:
+      - registry-service
+    entrypoint: ["./wait-for-it.sh", "registry-service:8761", "--", "java", "-jar", "app.jar"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:7777/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
 
   patient-db:
     image: postgres:14.1
@@ -75,78 +75,56 @@ services:
       retries: 5
 
   patient-service:
-    container_name: patient-service
-    restart: always
     build:
       context: ../patient-service
       dockerfile: Dockerfile
       args:
         PROFILE: local
-    depends_on:
-      registry-service:
-        condition: service_healthy
-      patient-db:
-        condition: service_healthy
-    environment:
-      SERVER_SERVLET_CONTEXT_PATH: "/api"
-      SPRING_DATASOURCE_URL: jdbc:postgresql://patient-db:5432/patient
-      SPRING_JPA_DATABASE_PLATFORM: org.hibernate.dialect.PostgreSQLDialect
-      SPRING_JPA_SHOW_SQL: "true"
+    container_name: patient-service
+    restart: always
     ports:
       - "8081:8081"
     networks:
       - patient_ms-network
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env.common
+      - .env.secrets
+      - .env.patient-service
+    depends_on:
+      - registry-service
+      - config-service
+      - patient-db
+    entrypoint: ["bash", "-c", "/app/wait-for-it.sh config-service:7777 -- /app/wait-for-it.sh patient-db:5432 -- java -jar app.jar"]
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8081/actuator/health || exit 1"]
       interval: 10s
       retries: 5
       start_period: 30s
-    entrypoint: ["/bin/sh", "-c", "ls -la /app && /app/wait-for-it.sh registry-service:8761 --timeout=30 --strict -- java -Xmx512m -jar app.jar"]
-    env_file:
-      - .env.common
-      - .env.secrets
-      - .env.patient-service
 
   report-service:
-    container_name: report-service
-    restart: always
     build:
       context: ../report-service
       dockerfile: Dockerfile
       args:
         PROFILE: local
-    depends_on:
-      registry-service:
-        condition: service_healthy
-      patient-db:
-        condition: service_healthy
-      patient-service:
-        condition: service_started
-    environment:
-      SERVER_SERVLET_CONTEXT_PATH: "/report-service"
-      SPRING_DATASOURCE_URL: jdbc:postgresql://patient-db:5432/patient
-      SPRING_JPA_DATABASE_PLATFORM: org.hibernate.dialect.PostgreSQLDialect
-      SPRING_JPA_SHOW_SQL: "true"
+    container_name: report-service
+    restart: always
     ports:
-      - "7071:8083"
+      - "7071:7071"
     networks:
       - patient_ms-network
-
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8083/actuator/health || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    entrypoint: ["/bin/sh", "-c", "java -Xmx512m -jar /app/app.jar > /tmp/app.log 2>&1 && tail -f /tmp/app.log"]
     env_file:
       - .env.common
       - .env.secrets
       - .env.report-service
-
-volumes:
-  patient_postgres_data:
+    depends_on:
+      - registry-service
+      - config-service
+      - patient-service
+      - patient-db
+    entrypoint: ["./wait-for-it.sh", "patient-service:8081", "--", "java", "-jar", "app.jar"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8083/actuator/health || exit 1"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
