@@ -46,7 +46,7 @@ services:
       - .env.config-service
     depends_on:
       - registry-service
-    entrypoint: ["./wait-for-it.sh", "registry-service:8761", "--", "java", "-jar", "app.jar"]
+    entrypoint: ["bash", "/app/entrypoint.sh"]
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:7777/actuator/health || exit 1"]
       interval: 10s
@@ -59,8 +59,9 @@ services:
     container_name: patient-db
     restart: always
     volumes:
-      - patient_postgres_data:/var/lib/postgresql/data
       - ../init-scripts/patient-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
     env_file:
       - .env.common
       - .env.secrets
@@ -94,7 +95,7 @@ services:
       - registry-service
       - config-service
       - patient-db
-    entrypoint: ["bash", "-c", "/app/wait-for-it.sh config-service:7777 -- /app/wait-for-it.sh patient-db:5432 -- java -jar app.jar"]
+    entrypoint: ["bash", "/app/entrypoint.sh"]
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8081/actuator/health || exit 1"]
       interval: 10s
@@ -110,7 +111,7 @@ services:
     container_name: report-service
     restart: always
     ports:
-      - "7071:7071"
+      - "8083:8083"
     networks:
       - patient_ms-network
     env_file:
@@ -122,9 +123,9 @@ services:
       - config-service
       - patient-service
       - patient-db
-    entrypoint: ["./wait-for-it.sh", "patient-service:8081", "--", "java", "-jar", "app.jar"]
+    entrypoint: [ "bash", "/app/entrypoint.sh" ]
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8083/actuator/health || exit 1"]
+      test: [ "CMD-SHELL", "curl -f http://localhost:8083/actuator/health || exit 1" ]
       interval: 10s
       retries: 5
       start_period: 30s
