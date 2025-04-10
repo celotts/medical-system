@@ -11,11 +11,8 @@ function wait_for_service() {
     echo "✅ $name está disponible."
 }
 
-# === Espera por dependencias ===
+# ❌ ELIMINAMOS cualquier espera de sí mismo
 wait_for_service "registry-service" "registry-service:8761" 60
-wait_for_service "config-service" "config-service:7777" 60
-wait_for_service "patient-service" "patient-service:8081" 120
 
-# === Lanzar app ===
 echo "🚀 Iniciando app.jar..."
 exec java -jar app.jar
